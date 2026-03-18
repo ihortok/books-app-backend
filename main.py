@@ -1,6 +1,18 @@
-def main():
-    print("Hello from books-app-backend!")
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+
+from app.routers import books
 
 
-if __name__ == "__main__":
-    main()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    from app.database import engine
+
+    await engine.dispose()
+
+
+app = FastAPI(title="Books API", version="0.1.0", lifespan=lifespan)
+
+app.include_router(books.router)
