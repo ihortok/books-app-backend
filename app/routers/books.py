@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models import Book
@@ -13,13 +14,18 @@ router = APIRouter(prefix="/books", tags=["books"])
 
 @router.get("/", response_model=list[BookResponse])
 async def list_books(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Book).order_by(Book.created_at.desc()))
+    result = await db.execute(
+        select(Book).options(selectinload(Book.author)).order_by(Book.created_at.desc())
+    )
     return result.scalars().all()
 
 
 @router.get("/{book_id}", response_model=BookResponse)
 async def get_book(book_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    book = await db.get(Book, book_id)
+    result = await db.execute(
+        select(Book).options(selectinload(Book.author)).where(Book.id == book_id)
+    )
+    book = result.scalar_one_or_none()
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
     return book
@@ -30,8 +36,10 @@ async def create_book(data: BookCreate, db: AsyncSession = Depends(get_db)):
     book = Book(**data.model_dump())
     db.add(book)
     await db.commit()
-    await db.refresh(book)
-    return book
+    result = await db.execute(
+        select(Book).options(selectinload(Book.author)).where(Book.id == book.id)
+    )
+    return result.scalar_one()
 
 
 @router.patch("/{book_id}", response_model=BookResponse)
@@ -44,8 +52,10 @@ async def update_book(
     for key, value in data.model_dump(exclude_unset=True).items():
         setattr(book, key, value)
     await db.commit()
-    await db.refresh(book)
-    return book
+    result = await db.execute(
+        select(Book).options(selectinload(Book.author)).where(Book.id == book.id)
+    )
+    return result.scalar_one()
 
 
 @router.delete("/{book_id}", status_code=204)
